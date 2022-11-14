@@ -12,8 +12,8 @@ The format of the command to run the cache coherence simulator is:
 >&emsp;&emsp;<protocol><br/>
 >&emsp;&emsp;<trace_file><br/>
 
-Here <protocol> is:
-0 - MSI
-1 - MSI + BusUpgr
-2 - MESI
-3 - MESI + Snoop Filter (History Filter)
+Here <protocol> is:<br/>
+0 - MSI<br/>
+1 - MSI + BusUpgr<br/>
+2 - MESI<br/>
+3 - MESI + Snoop Filter (History Filter)<br/>
