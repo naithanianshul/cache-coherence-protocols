@@ -17,3 +17,12 @@ Here **<protocol_id>** is:<br/>
 1 *for MSI + BusUpgr*<br/>
 2 *for MESI*<br/>
 3 *for MESI + Snoop Filter (History Filter)*<br/>
+
+Example - The cache specifications are:
+* Cache Size = 8192
+* Cache Associativity = 8
+* Block Size = 4
+* Protocol to be run: MESI = 2
+* Addresses to be accessed present in 'canneal.04t.longTrace' file
+
+```./smp_cache 8192 8 64 4 2 trace/canneal.04t.longTrace```
