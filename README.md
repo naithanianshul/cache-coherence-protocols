@@ -6,13 +6,13 @@ The format of the command to run the cache coherence simulator is:
 
 >./smp_cache<br/>
 >&emsp;&emsp;<cache_size><br/>
->&emsp;&emsp;<associativity><br/>
+>&emsp;&emsp;<cache_associativity><br/>
 >&emsp;&emsp;<block_size><br/>
 >&emsp;&emsp;<num_processors><br/>
->&emsp;&emsp;<protocol><br/>
+>&emsp;&emsp;<protocol_id><br/>
 >&emsp;&emsp;<trace_file><br/>
 
-Here <protocol> is:<br/>
+Here <protocol_id> is:<br/>
 0 - MSI<br/>
 1 - MSI + BusUpgr<br/>
 2 - MESI<br/>
