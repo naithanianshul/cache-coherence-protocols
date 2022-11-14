@@ -12,7 +12,7 @@ The format of the command to run the cache coherence simulator is:
 >&emsp;&emsp;<protocol_id><br/>
 >&emsp;&emsp;<trace_file><br/>
 
-Here <protocol_id> is:<br/>
+Here **<protocol_id>** is:<br/>
 0 *for MSI*<br/>
 1 *for MSI + BusUpgr*<br/>
 2 *for MESI*<br/>
