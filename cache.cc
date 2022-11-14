@@ -28,6 +28,7 @@ Cache::Cache(int s,int a,int b, int c)
    //*******************//
 
    cache_to_cache_transfers = memory_transactions = interventions = invalidations = flushes = BusRdX = BusUpgr = 0;
+   useful_snoops = wasted_snoops = filtered_snoops = 0;
  
    tagMask =0;
    for(i=0;i<log2Sets;i++)
@@ -47,12 +48,32 @@ Cache::Cache(int s,int a,int b, int c)
          cache[i][j].initializeMSI();
       }
    }
+
+   this->history_filter_enabled = false;
+}
+
+void Cache::setHistoryFilterSize(int rows, int cols)
+{
+   this->history_filter_enabled = true;
+   this->hrows = rows;
+   this->hcols = cols;
+
+   // History Filter 1D Array
+   history = new cacheLine*[this->hrows];
+   for(ulong i=0; i<this->hrows; i++)
+   {
+      history[i] = new cacheLine[this->hcols];
+      for(ulong j=0; j<this->hcols; j++) 
+      {
+         history[i][j].invalidate();
+      }
+   }
 }
 
 /**you might add other parameters to Access()
 since this function is an entry point 
 to the memory hierarchy (i.e. caches)**/
-/*void Cache::Access(ulong addr,uchar op)
+void Cache::Access(ulong addr,uchar op)
 {
    currentCycle++;//per cache global counter to maintain LRU order 
                   //among cache ways, updated on every cache access
@@ -75,8 +96,11 @@ to the memory hierarchy (i.e. caches)**/
       updateLRU(line);
       if(op == 'w') line->setFlags(DIRTY);
    }
-}*/
+}
 
+// --------------- //
+// Cache Functions //
+// --------------- //
 /*look up line*/
 cacheLine * Cache::findLine(ulong addr)
 {
@@ -168,6 +192,101 @@ cacheLine *Cache::fillLine(ulong addr)
    return victim;
 }
 
+// -------------- //
+// History Filter //
+// -------------- //
+/*look up line*/
+cacheLine * Cache::historyFindLine(ulong addr)
+{
+   if (this->history_filter_enabled == false)
+      return NULL;
+   
+   ulong i, j, tag, pos;
+   
+   pos = hcols;
+   tag = calcTag(addr);
+   i   = calcIndex(addr);
+  
+   for(j=0; j<hcols; j++)
+   if(history[i][j].isValid()) {
+      if(history[i][j].getTag() == tag)
+      {
+         pos = j; 
+         break; 
+      }
+   }
+   if(pos == hcols) {
+      return NULL;
+   }
+   else {
+      return &(history[i][pos]); 
+   }
+}
+
+/*upgrade LRU line to be MRU line*/
+void Cache::historyUpdateLRU(cacheLine *line)
+{
+   line->setSeq(currentCycle);
+}
+
+/*return an invalid line as LRU, if any, otherwise return LRU line*/
+cacheLine * Cache::historyGetLRU(ulong addr)
+{
+   ulong i, j, victim, min;
+
+   victim = hcols;
+   min    = currentCycle;
+   i      = calcIndex(addr);
+   
+   for(j=0;j<hcols;j++)
+   {
+      if(history[i][j].isValid() == 0) { 
+         return &(history[i][j]); 
+      }   
+   }
+
+   for(j=0;j<hcols;j++)
+   {
+      if(history[i][j].getSeq() <= min) { 
+         victim = j; 
+         min = history[i][j].getSeq();}
+   } 
+
+   assert(victim != hcols);
+   
+   return &(history[i][victim]);
+}
+
+/*find a victim, move it to MRU position*/
+cacheLine *Cache::historyFindLineToReplace(ulong addr)
+{
+   cacheLine * victim = historyGetLRU(addr);
+   historyUpdateLRU(victim);
+  
+   return (victim);
+}
+
+/*allocate a new line*/
+void Cache::historyFillLine(ulong addr)
+{ 
+   if (this->history_filter_enabled == true)
+   {
+      ulong tag;
+   
+      cacheLine *victim = historyFindLineToReplace(addr);
+      assert(victim != 0);
+      
+      tag = calcTag(addr);
+      victim->setTag(tag);
+      victim->setFlags(VALID);
+      /**note that this cache line has been already 
+         upgraded to MRU in the previous function (historyFindLineToReplace)**/
+   }
+}
+
+// ------------------ //
+// Protocol Functions //
+// ------------------ //
 string Cache::MSIAccess(ulong addr,uchar op, int proc, std::string bus_signal)
 {
    if (proc == this->cache_number)                                   // Requester
@@ -409,7 +528,11 @@ string Cache::MESIAccess(ulong addr,uchar op, int proc, std::string bus_signal, 
             
       if(op == 'w') writes++;
       else          reads++;
-      
+
+      cacheLine *history_line = historyFindLine(addr);
+      if (history_line != NULL)
+         history_line->invalidate();
+
       cacheLine * line = findLine(addr);
       if(line == NULL)/*miss*/
       {
@@ -475,55 +598,79 @@ string Cache::MESIAccess(ulong addr,uchar op, int proc, std::string bus_signal, 
    }
    else                                                                    // Snooper
    {
-      cacheLine * line = findLine(addr);
-      if (line != NULL)    //hit
+      cacheLine * history_line = historyFindLine(addr);
+      if (history_line != NULL)     // hit
       {
-         if (bus_signal == "BusRdX")
+         // Definitely not in Cache
+         this->filtered_snoops++;
+         historyUpdateLRU(history_line);
+      }
+      else                          // miss
+      {
+         // Maybe its in Cache, or maybe not. We have to check.
+         cacheLine * line = findLine(addr);
+         if (line != NULL)    //hit
          {
-            if ( (line->getState() == 'S') || (line->getState() == 'E') || (line->getState() == 'M') )
+            this->useful_snoops++;
+            if (bus_signal == "BusRdX")
             {
-               if( line->getFlags() == DIRTY )
+               if ( (line->getState() == 'S') || (line->getState() == 'E') || (line->getState() == 'M') )
                {
-                  writeBack(addr);
-               }
-               
-               if (line->getState() == 'M')
-                  this->flushes++;
+                  if (line->getState() == 'M') // && ( line->getFlags() == DIRTY )
+                  {
+                     writeBack(addr);
+                  }
+                  
+                  if (line->getState() == 'M')
+                     this->flushes++;
 
-               line->invalidate();
-               this->invalidations++;
-               
+                  line->invalidate();
+                  this->invalidations++;
+                  
+                  historyFillLine(addr);
+               }
+            }
+            else if (bus_signal == "BusRd")
+            {
+               if ( (line->getState() == 'M') || (line->getState() == 'E') )
+               {
+                  if (line->getFlags() == DIRTY)
+                  {
+                     writeBack(addr);
+                  }
+
+                  if (line->getState() == 'M')
+                     this->flushes++;
+
+                  line->setState('S');
+                  this->interventions++;
+               }
+            }
+            else if (bus_signal == "BusUpgr")
+            {
+               if (line->getState() == 'S')
+               {
+                  line->invalidate();
+                  this->invalidations++;
+
+                  historyFillLine(addr);
+               }
             }
          }
-         else if (bus_signal == "BusRd")
+         else
          {
-            if ( (line->getState() == 'M') || (line->getState() == 'E') )
-            {
-               if (line->getFlags() == DIRTY)
-               {
-                  writeBack(addr);
-               }
-
-               if (line->getState() == 'M')
-                  this->flushes++;
-
-               line->setState('S');
-               this->interventions++;
-            }
-         }
-         else if (bus_signal == "BusUpgr")
-         {
-            if (line->getState() == 'S')
-            {
-               line->invalidate();
-               this->invalidations++;
-            }
+            this->wasted_snoops++;
+            historyFillLine(addr);
          }
       }
+      
       return "";
    }
 }
 
+// ---------------- //
+// Print Statements //
+// ---------------- //
 void Cache::printCacheState()
 {
    for(ulong i=0; i<sets; i++)
@@ -538,7 +685,21 @@ void Cache::printCacheState()
    std::cout << '\n';
 }
 
-void Cache::printStats(int core_number)
+void Cache::printHistoryState()
+{
+   for(ulong i=0; i<16; i++)
+   {
+      for(ulong j=0; j<1; j++)
+      {
+         std::cout << history[i][j].getTag() <<" ";
+         //std::cout << cache[i][j].getTag() << '(' << cache[i][j].getFlags() << ')' <<'(' << cache[i][j].getState() << ')' <<" ";
+      }
+      std::cout << '\n';
+   }
+   std::cout << '\n';
+}
+
+void Cache::printStats(int core_number, int protocol)
 {
    std::cout << "============ Simulation results (Cache " << core_number << ") ============\n";
    /****print out the rest of statistics here.****/
@@ -557,4 +718,10 @@ void Cache::printStats(int core_number)
    std::cout << "12. number of BusRdX: " << BusRdX << '\n';
    std::cout << "13. number of BusUpgr: " << BusUpgr << '\n';
    /****follow the ouput file format**************/
+   if (protocol == 3)
+   {
+      std::cout << "14. number of useful snoops: " << useful_snoops << '\n';
+      std::cout << "15. number of wasted snoops: " << wasted_snoops << '\n';
+      std::cout << "16. number of filtered snoops: " << filtered_snoops << '\n';
+   }
 }

@@ -55,15 +55,19 @@ protected:
    //******///
    //add coherence counters here///
    ulong cache_to_cache_transfers, memory_transactions, interventions, invalidations, flushes, BusRd, BusRdX, BusUpgr;
+   ulong useful_snoops, wasted_snoops, filtered_snoops;
    //******///
 
    cacheLine **cache;
+   cacheLine **history;
    ulong calcTag(ulong addr)     { return (addr >> (log2Blk) );}
    ulong calcIndex(ulong addr)   { return ((addr >> log2Blk) & tagMask);}
    ulong calcAddr4Tag(ulong tag) { return (tag << (log2Blk));}
    
 public:
-   ulong currentCycle;  
+   ulong currentCycle;
+   ulong hrows, hcols;
+   bool history_filter_enabled;
    
    Cache(int,int,int,int);
    ~Cache() { delete cache; }
@@ -82,7 +86,7 @@ public:
    void writeBack(ulong) {writeBacks++; memory_transactions++;}
    void Access(ulong,uchar);
    void updateLRU(cacheLine *);
-   void printStats(int core_number);
+   void printStats(int core_number, int protocol);
 
    //******///
    //add other functions to handle bus transactions///
@@ -92,6 +96,15 @@ public:
    std::string MSIBusUpgrAccess(ulong,uchar,int,std::string);
    std::string MESIAccess(ulong,uchar,int,std::string, bool C);
    bool checkCopies(ulong addr);
+
+   // History Filter
+   void setHistoryFilterSize(int rows, int cols);
+   cacheLine * historyFindLine(ulong addr);
+   void historyUpdateLRU(cacheLine *line);
+   cacheLine * historyGetLRU(ulong addr);
+   cacheLine * historyFindLineToReplace(ulong addr);
+   void historyFillLine(ulong addr);
+   void printHistoryState();
 };
 
 #endif

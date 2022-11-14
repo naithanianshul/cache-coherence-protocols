@@ -12,7 +12,6 @@ using namespace std;
 
 int main(int argc, char *argv[])
 {
-    
     ifstream fin;
     FILE * pFile;
 
@@ -26,7 +25,7 @@ int main(int argc, char *argv[])
     ulong cache_assoc    = atoi(argv[2]);
     ulong blk_size       = atoi(argv[3]);
     ulong num_processors = atoi(argv[4]);
-    ulong protocol       = atoi(argv[5]); /* 0:MSI 1:MSI BusUpgr 2:MESI 3:MESI Snoop FIlter */
+    ulong protocol       = atoi(argv[5]); /* 0:MSI 1:MSI BusUpgr 2:MESI 3:MESI Snoop Filter */
     char *fname        = (char *) malloc(20);
     fname              = argv[6];
 
@@ -49,7 +48,7 @@ int main(int argc, char *argv[])
             std::cout << "COHERENCE PROTOCOL: MESI" << '\n';
             break;
         case 3:
-            std::cout << "COHERENCE PROTOCOL: MESI Snoop FIlter" << '\n';
+            std::cout << "COHERENCE PROTOCOL: MESI Filter" << '\n';
             break;
     }
     std::cout << "TRACE FILE: " << fname << '\n';
@@ -58,6 +57,9 @@ int main(int argc, char *argv[])
     Cache** cacheArray = (Cache **) malloc(num_processors * sizeof(Cache));
     for(ulong i = 0; i < num_processors; i++) {
         cacheArray[i] = new Cache(cache_size, cache_assoc, blk_size, i);
+
+        if (protocol == 3)
+            cacheArray[i] -> setHistoryFilterSize(16, 1);
     }
 
     pFile = fopen (fname,"r");
@@ -89,7 +91,7 @@ int main(int argc, char *argv[])
         std::string bus_signal = "";
         bool C = true;                      // C = true means the block is the only copy among all the cores' cache
         
-        if (protocol == 2)
+        if ( (protocol == 2) || (protocol == 3) )
         {
             for(ulong i = 0; i < num_processors; i++)
             {
@@ -115,6 +117,9 @@ int main(int argc, char *argv[])
             case 2:
                 bus_signal = cacheArray[proc] -> MESIAccess(addr, op, proc, "", C);
                 break;
+            case 3:
+                bus_signal = cacheArray[proc] -> MESIAccess(addr, op, proc, "", C);
+                break;
         }
 
         for(ulong i = 0; i < num_processors; i++)
@@ -126,12 +131,13 @@ int main(int argc, char *argv[])
                     case 0:
                         cacheArray[i] -> MSIAccess(addr, op, proc, bus_signal);
                         break;
-                
                     case 1:
                         cacheArray[i] -> MSIBusUpgrAccess(addr, op, proc, bus_signal);
                         break;
-                    
                     case 2:
+                        cacheArray[i] -> MESIAccess(addr, op, proc, bus_signal, C);
+                        break;
+                    case 3:
                         cacheArray[i] -> MESIAccess(addr, op, proc, bus_signal, C);
                         break;
                 }
@@ -149,7 +155,7 @@ int main(int argc, char *argv[])
     //********************************//
     for(ulong i = 0; i < num_processors; i++)
     {
-        cacheArray[i] -> printStats(i);
+        cacheArray[i] -> printStats(i, protocol);
         //cacheArray[i] -> printCacheState();
     }
 }
