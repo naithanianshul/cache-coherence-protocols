@@ -26,3 +26,5 @@ Example - The cache specifications are:
 * Addresses to be accessed present in 'canneal.04t.longTrace' file
 
 ```./smp_cache 8192 8 64 4 2 trace/canneal.04t.longTrace```
+
+The History Filter in the code is hardcoded as a 16 block and 1 associativity array.
