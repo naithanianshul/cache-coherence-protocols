@@ -47,10 +47,10 @@ public:
 class Cache
 {
 protected:
-   ulong size, lineSize, assoc, sets, log2Sets, log2Blk, tagMask, numLines;
+   ulong size, lineSize, assoc, sets, log2Sets, log2Blk, tagMask, tagMaskH, numLines;
    ulong reads,readMisses,writes,writeMisses,writeBacks;
 
-   int cache_number = 0;
+   int cache_number;
 
    //******///
    //add coherence counters here///
@@ -62,6 +62,7 @@ protected:
    cacheLine **history;
    ulong calcTag(ulong addr)     { return (addr >> (log2Blk) );}
    ulong calcIndex(ulong addr)   { return ((addr >> log2Blk) & tagMask);}
+   ulong calcIndexH(ulong addr)   { return ((addr >> log2Blk) & tagMaskH);}
    ulong calcAddr4Tag(ulong tag) { return (tag << (log2Blk));}
    
 public:

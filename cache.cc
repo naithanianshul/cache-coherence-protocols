@@ -58,6 +58,13 @@ void Cache::setHistoryFilterSize(int rows, int cols)
    this->hrows = rows;
    this->hcols = cols;
 
+   tagMaskH =0;
+   for(ulong i=0;i<(ulong)(log2(this->hrows));i++)
+   {
+      tagMaskH <<= 1;
+      tagMaskH |= 1;
+   }
+
    // History Filter 1D Array
    history = new cacheLine*[this->hrows];
    for(ulong i=0; i<this->hrows; i++)
@@ -205,7 +212,7 @@ cacheLine * Cache::historyFindLine(ulong addr)
    
    pos = hcols;
    tag = calcTag(addr);
-   i   = calcIndex(addr);
+   i   = calcIndexH(addr);
   
    for(j=0; j<hcols; j++)
    if(history[i][j].isValid()) {
@@ -236,7 +243,7 @@ cacheLine * Cache::historyGetLRU(ulong addr)
 
    victim = hcols;
    min    = currentCycle;
-   i      = calcIndex(addr);
+   i      = calcIndexH(addr);
    
    for(j=0;j<hcols;j++)
    {
@@ -598,69 +605,72 @@ string Cache::MESIAccess(ulong addr,uchar op, int proc, std::string bus_signal, 
    }
    else                                                                    // Snooper
    {
-      cacheLine * history_line = historyFindLine(addr);
-      if (history_line != NULL)     // hit
-      {
-         // Definitely not in Cache
-         this->filtered_snoops++;
-         historyUpdateLRU(history_line);
-      }
-      else                          // miss
-      {
-         // Maybe its in Cache, or maybe not. We have to check.
-         cacheLine * line = findLine(addr);
-         if (line != NULL)    //hit
+      //if (bus_signal != "")
+      {  
+         cacheLine * history_line = historyFindLine(addr);
+         if (history_line != NULL)     // hit
          {
-            this->useful_snoops++;
-            if (bus_signal == "BusRdX")
-            {
-               if ( (line->getState() == 'S') || (line->getState() == 'E') || (line->getState() == 'M') )
-               {
-                  if (line->getState() == 'M') // && ( line->getFlags() == DIRTY )
-                  {
-                     writeBack(addr);
-                  }
-                  
-                  if (line->getState() == 'M')
-                     this->flushes++;
-
-                  line->invalidate();
-                  this->invalidations++;
-                  
-                  historyFillLine(addr);
-               }
-            }
-            else if (bus_signal == "BusRd")
-            {
-               if ( (line->getState() == 'M') || (line->getState() == 'E') )
-               {
-                  if (line->getFlags() == DIRTY)
-                  {
-                     writeBack(addr);
-                  }
-
-                  if (line->getState() == 'M')
-                     this->flushes++;
-
-                  line->setState('S');
-                  this->interventions++;
-               }
-            }
-            else if (bus_signal == "BusUpgr")
-            {
-               if (line->getState() == 'S')
-               {
-                  line->invalidate();
-                  this->invalidations++;
-
-                  historyFillLine(addr);
-               }
-            }
+            // Definitely not in Cache
+            this->filtered_snoops++;
+            historyUpdateLRU(history_line);
          }
-         else
+         else                          // miss
          {
-            this->wasted_snoops++;
-            historyFillLine(addr);
+            // Maybe its in Cache, or maybe not. We have to check.
+            cacheLine * line = findLine(addr);
+            if (line != NULL)    //hit
+            {
+               this->useful_snoops++;
+               if (bus_signal == "BusRdX")
+               {
+                  if ( (line->getState() == 'S') || (line->getState() == 'E') || (line->getState() == 'M') )
+                  {
+                     if (line->getState() == 'M') // && ( line->getFlags() == DIRTY )
+                     {
+                        writeBack(addr);
+                     }
+                     
+                     if (line->getState() == 'M')
+                        this->flushes++;
+
+                     line->invalidate();
+                     this->invalidations++;
+                     
+                     historyFillLine(addr);
+                  }
+               }
+               else if (bus_signal == "BusRd")
+               {
+                  if ( (line->getState() == 'M') || (line->getState() == 'E') )
+                  {
+                     if (line->getFlags() == DIRTY)
+                     {
+                        writeBack(addr);
+                     }
+
+                     if (line->getState() == 'M')
+                        this->flushes++;
+
+                     line->setState('S');
+                     this->interventions++;
+                  }
+               }
+               else if (bus_signal == "BusUpgr")
+               {
+                  if (line->getState() == 'S')
+                  {
+                     line->invalidate();
+                     this->invalidations++;
+
+                     historyFillLine(addr);
+                  }
+               }
+            }
+            else
+            {
+               this->wasted_snoops++;
+               historyFillLine(addr);
+            }
          }
       }
       
